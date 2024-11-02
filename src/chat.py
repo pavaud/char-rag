@@ -1,39 +1,69 @@
 import tempfile
 
 import streamlit as st
-from streamlit import session_state as stss
 
-from langchain_community.document_loaders import PyMuPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
+from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_huggingface import HuggingFaceEmbeddings
+from streamlit import session_state as stss
+from streamlit.runtime.uploaded_file_manager import UploadedFile
 from transformers import pipeline
 
 
-if "already_uploaded" not in stss:
-    stss.already_uploaded = False
+def init() -> None:
+    stss.setdefault("already_uploaded", False)
+    stss.setdefault("messages", [])
+    stss.setdefault("uploaded_file", None)
+    stss.setdefault("info_container", None)
 
-if "messages" not in stss:
-    stss.messages = []
 
-embedding_function = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-chroma_db = Chroma("pdf_store", embedding_function=embedding_function)
-qa_pipeline = pipeline(
-    task="question-answering",
-    model="distilbert-base-uncased-distilled-squad",
-)
+def display_text(content: str, role: str) -> None:
+    stss.messages.append({"role": role, "content": content})
+    st.chat_message(role).write(content)
 
-st.title("RAG Chatbot")
 
-# Sidebar
+def compute_answer(question: str) -> str:
+    # Encode question and retrieve top relevant chunks
+    question_embedding = embedding_function.embed_query(question)
+    relevant_docs = chroma_db.similarity_search_by_vector(question_embedding, k=10)
+    combined_context = " ".join([doc.page_content for doc in relevant_docs])
 
-# Upload PDF file
-with st.sidebar:
-    uploaded_file = st.file_uploader("**Upload a PDF file**", type="pdf")
-    info_container = st.container()
+    # Infer answer
+    qa_pipeline = pipeline(
+        task="question-answering",
+        model="distilbert-base-uncased-distilled-squad",
+    )
+    answer = qa_pipeline(question=question, context=combined_context)
 
-if uploaded_file and not stss.already_uploaded:
-    stss.aleady_uploaded = True
+    return answer["answer"]
+
+
+def display_chat_history() -> None:
+    for message in stss.messages:
+        if message["role"] == "user":
+            st.chat_message("user").write(message["content"])
+        else:
+            st.chat_message("assistant").write(message["content"])
+
+
+def display_prompt() -> None:
+    if question := st.chat_input("Ask a question about the PDF:"):
+        if stss.uploaded_file:
+            display_text(question, "user")
+            answer = compute_answer(question)
+            display_text(answer, "assistant")
+        else:
+            stss.info_container.error("Upload a file before asking questions.")
+
+
+def display_chat() -> None:
+    display_chat_history()
+    display_prompt()
+
+
+def generate_embeddings(uploaded_file: UploadedFile) -> None:
+    """Generates embeddings from pdf file and saves it in database."""
 
     # Save the uploaded file temporarily
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
@@ -50,33 +80,26 @@ if uploaded_file and not stss.already_uploaded:
     for chunk in chunks:
         chroma_db.add_texts([chunk.page_content])
 
+
+st.title("RAG Chatbot")
+
+init()
+
+embedding_function = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+chroma_db = Chroma(
+    collection_name="pdf_store",
+    embedding_function=embedding_function,
+    persist_directory="chromadb",
+)
+
+# Sidebar
+with st.sidebar:
+    stss.uploaded_file = st.file_uploader("**Upload a PDF file**", type="pdf")
+    stss.info_container = st.container()
+
+if stss.uploaded_file and not stss.already_uploaded:
+    stss.already_uploaded = True
+    generate_embeddings(stss.uploaded_file)
+
 # Chat
-
-# Display message history
-for message in stss.messages:
-    if message["role"] == "user":
-        st.chat_message("user").write(message["content"])
-    else:
-        st.chat_message("assistant").write(message["content"])
-
-# User chat input
-if question := st.chat_input("Ask a question about the PDF:"):
-    if uploaded_file:
-
-        stss.messages.append({"role": "user", "content": question})
-        st.chat_message("user").write(question)
-
-        # Encode question and retrieve top relevant chunks
-        question_embedding = embedding_function.embed_query(question)
-        relevant_docs = chroma_db.similarity_search_by_vector(question_embedding, k=10)
-
-        # Combine the content of top relevant chunks for enriched context
-        combined_context = " ".join([doc.page_content for doc in relevant_docs])
-
-        # Infer answer
-        answer = qa_pipeline(question=question, context=combined_context)
-
-        stss.messages.append({"role": "assistant", "content": answer["answer"]})
-        st.chat_message("assistant").write(answer["answer"])
-    else:
-        info_container.error("Upload a file before asking questions.")
+display_chat()
