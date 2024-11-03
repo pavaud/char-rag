@@ -11,14 +11,14 @@ from streamlit.runtime.uploaded_file_manager import UploadedFile
 from transformers import pipeline
 
 
-def init() -> None:
+def init_session_state() -> None:
     stss.setdefault("already_uploaded", False)
     stss.setdefault("messages", [])
     stss.setdefault("uploaded_file", None)
     stss.setdefault("info_container", None)
 
 
-def display_text(content: str, role: str) -> None:
+def display_message(content: str, role: str) -> None:
     stss.messages.append({"role": role, "content": content})
     st.chat_message(role).write(content)
 
@@ -41,18 +41,15 @@ def compute_answer(question: str) -> str:
 
 def display_chat_history() -> None:
     for message in stss.messages:
-        if message["role"] == "user":
-            st.chat_message("user").write(message["content"])
-        else:
-            st.chat_message("assistant").write(message["content"])
+        st.chat_message(message["role"]).write(message["content"])
 
 
 def display_prompt() -> None:
     if question := st.chat_input("Ask a question about the PDF:"):
         if stss.uploaded_file:
-            display_text(question, "user")
+            display_message(question, "user")
             answer = compute_answer(question)
-            display_text(answer, "assistant")
+            display_message(answer, "assistant")
         else:
             stss.info_container.error("Upload a file before asking questions.")
 
@@ -83,7 +80,7 @@ def generate_embeddings(uploaded_file: UploadedFile) -> None:
 
 st.title("RAG Chatbot")
 
-init()
+init_session_state()
 
 embedding_function = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 chroma_db = Chroma(
