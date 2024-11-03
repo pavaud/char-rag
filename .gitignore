@@ -1,6 +1,43 @@
-*.env
+# project
+chromadb/
+
+# virtual environment
+venv/
+env/
 .venv/
 
-__pycache__
+# environment variables
+*.env
 
-chromadb/
+# vscode
+.vscode/
+
+# python files
+*__pycache__/
+.mypy_cache/
+.pytest_cache/
+*pytest_report.html
+.coverage
+
+# docker
+.dockerignore
+
+# notebooks
+# *.ipynb
+
+# ssh
+*.pem
+*.p8
+
+# logs
+*log/
+*.log
+
+# folders
+data/
+src/*data/
+temp/
+tmp/
+
+# miscelleanous
+*.todo
